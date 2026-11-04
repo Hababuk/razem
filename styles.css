@@ -329,3 +329,7 @@ textarea.in { height: auto; min-height: 64px; padding: 10px 12px; resize: vertic
 
 .item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; transition: background .15s; }
 .item.pressed { background: var(--accent-soft); }
+
+.noanim { animation: none !important; }
+/* iOS: make taps snappy and never treat a tap as a text selection or a double-tap zoom */
+button, [data-act], [data-sact] { touch-action: manipulation; -webkit-user-select: none; user-select: none; cursor: pointer; }

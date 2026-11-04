@@ -445,6 +445,14 @@ function nav() {
 }
 
 /* ---------- render ---------- */
+let renderQueued = false, touching = false, renderAfterTouch = false;
+function scheduleRender() {   // many database updates can arrive within a second: draw once per frame
+  if (renderQueued) return; renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; if (touching) { renderAfterTouch = true; return; } render(); });
+}
+document.addEventListener('pointerdown', () => { touching = true; }, true);
+const touchEnd = () => { touching = false; if (renderAfterTouch) { renderAfterTouch = false; setTimeout(scheduleRender, 50); } };
+document.addEventListener('pointerup', touchEnd, true); document.addEventListener('pointercancel', touchEnd, true);
 function render() {
   document.documentElement.lang = getLang();
   const app = $('#app');
@@ -473,6 +481,14 @@ function openTask(task, ctxDate, onDate) {
 }
 function closeSheet() { ui.sheet = null; $('#sheet-root').innerHTML = ''; }
 function renderSheet(first) {
+  const root = $('#sheet-root'), sb = $('.sheet-b', root), scroll = sb ? sb.scrollTop : 0;
+  renderSheetInner(first);
+  if (!first) {   // an update, not opening: no slide-in again, same scroll position
+    root.querySelectorAll('.sheet, .scrim').forEach(e => e.classList.add('noanim'));
+    const nb = $('.sheet-b', root); if (nb) nb.scrollTop = scroll;
+  }
+}
+function renderSheetInner(first) {
   const root = $('#sheet-root'); if (!ui.sheet) { root.innerHTML = ''; return; }
   if (ui.sheet.kind === 'meal') return renderMealSheet(first);
   if (ui.sheet.kind === 'price') return renderPriceSheet(first);
@@ -978,7 +994,7 @@ document.addEventListener('keydown', e => {
 function rollover() {
   const td = todayStr();
   if (td !== ui.lastToday) { if (ui.day === ui.lastToday) ui.day = td; if (ui.calDay === ui.lastToday) { ui.calDay = td; ui.calMonth = td.slice(0, 7); } ui.lastToday = td; }
-  if (S?.phase === 'ready') render();
+  if (S?.phase === 'ready') scheduleRender();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { rollover(); refreshPush(); } });
 setInterval(rollover, 60000);
@@ -1012,15 +1028,17 @@ document.addEventListener('contextmenu', e => { if (e.target.closest('[data-lp]'
   try { store = await createStore(); }
   catch (e) { $('#app').innerHTML = `<div class="auth"><h1>⚠️</h1><p>${esc(e.message)}</p></div>`; return; }
   store.onError = e => toast(t('saveError', { e: e.code || e.message }));
+  const repaired = new Set();
   store.on(s => {
     S = s;
     if (s.phase === 'ready' && !store.demo) for (const tk of s.tasks) {
       const rec = R.isRecurring(tk), end = rec ? (tk.until || '9999-12-31') : tk.date;
-      if (tk.endDate !== end || (!rec && typeof tk.closed !== 'boolean')) {
+      if ((tk.endDate !== end || (!rec && typeof tk.closed !== 'boolean')) && !repaired.has(tk.id)) {
+        repaired.add(tk.id);
         store.saveTask({ id: tk.id, endDate: end, ...(rec ? {} : { closed: !!s.comps[R.compId(tk.id, tk.date)] }) }).catch(() => { });
       }
     }
-    render();
+    scheduleRender();
     if (ui.pending && s.phase === 'ready' && (s.tasks.length || ui.pending.summary)) handleOpen(ui.pending);
   });
   refreshPush();
