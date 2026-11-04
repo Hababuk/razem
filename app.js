@@ -28,6 +28,7 @@ const I = {
   meal: svg('<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 0-3.5 2.5-3.5 6v4H17"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  copy: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
   note: svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
 };
 let toastT;
@@ -516,7 +517,7 @@ function renderSheetInner(first) {
   const opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   root.innerHTML = `<div class="scrim" data-sact="close"></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>
-    <div class="sheet-h"><h2>${isNew ? t('newTask') : t('editTask')}</h2><button class="iconbtn" data-sact="close" aria-label="${t('cancel')}">${I.x}</button></div>
+    <div class="sheet-h"><h2>${isNew ? t(ui.sheet.copied ? 'copyOfTask' : 'newTask') : t('editTask')}</h2><button class="iconbtn" data-sact="close" aria-label="${t('cancel')}">${I.x}</button></div>
     <div class="sheet-b">
       <div class="field"><input class="in title" id="f-title" data-f="title" value="${esc(d.title)}" placeholder="${esc(t('title'))}" maxlength="120" enterkeyhint="done"></div>
       ${m.length > 1 ? `<button type="button" class="privtog ${d.private ? 'on' : ''}" data-sact="private">${I.lock}<span><b>${t('privateTask')}</b><small>${t(d.private ? 'privateOn' : 'privateOff')}</small></span><i class="sw2"></i></button>` : ''}
@@ -542,6 +543,7 @@ function renderSheetInner(first) {
       ${!isNew ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
         ${ctxDate && comp?.status !== 'missed' ? `<button type="button" class="btn ghost" data-sact="missed">${t('notDoneBtn')}</button>` : ''}
         ${ctxDate && R.isRecurring(d) ? `<button type="button" class="btn ghost" data-sact="skip">${comp?.status === 'skip' ? t('unskipDay') : t('skipDay')}</button>` : ''}
+        <button type="button" class="btn ghost" data-sact="copy">${I.copy.replace('<svg', '<svg width="18" height="18"')} ${t('copyTask')}</button>
         <button type="button" class="btn danger" data-sact="delete">${t('delete')}</button></div>` : ''}
     </div>
     <div class="sheet-f"><button type="button" class="btn ghost" data-sact="close">${t('cancel')}</button><button type="button" class="btn primary" data-sact="save">${t('save')}</button></div>
@@ -608,6 +610,17 @@ function sheetAct(act, v) {
       flushDayNote();
       const c = S.comps[R.compId(d.id, s.ctxDate)];
       setComp(d.id, s.ctxDate, c?.status === 'skip' ? null : 'skip'); return closeSheet();
+    }
+    case 'copy': {   // new task prefilled from this one (no history, notes or id carried over)
+      const { id: _id, createdBy: _cb, createdAt: _ca, endDate: _e, closed: _c, _remTouched: _r, ...rest } = d;
+      const draft = structuredClone(rest), td = todayStr();
+      draft.date = (s.ctxDate || draft.date) < td ? td : (s.ctxDate || draft.date);
+      if (draft.until && draft.until < draft.date) draft.until = '';
+      draft._remTouched = true;
+      ui.sheet = { kind: 'task', draft, ctxDate: null, isNew: true, dayNote: '', focusNote: false, copied: true };
+      renderSheet(true);
+      setTimeout(() => { const el = $('#f-title'); if (el) { el.focus(); el.select(); } }, 80);
+      toast(t('copiedTask')); return;
     }
     case 'delete': {
       const td = todayStr();
