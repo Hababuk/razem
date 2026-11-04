@@ -356,7 +356,7 @@ function suggHtml(q) {
 function viewShopping() {
   const active = S.shopping.filter(i => !i.done).sort((a, b) => a.at - b.at);
   const done = S.shopping.filter(i => i.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-  const row = i => `<div class="item ${i.done ? 'done' : ''}"><button class="check" data-act="item" data-id="${i.id}">${I.check}</button>
+  const row = i => `<div class="item ${i.done ? 'done' : ''}" data-lp="${i.id}"><button class="check" data-act="item" data-id="${i.id}">${I.check}</button>
     <div class="iname"><button class="name" data-act="item" data-id="${i.id}">${esc(i.name)}</button>${i.done ? '' : priceHints(i)}</div><button class="x" data-act="item-del" data-id="${i.id}" aria-label="${t('delete')}">${I.x}</button></div>`;
   return `<div class="screen">
     <div class="topbar"><h1>${t('shopping')}</h1><button class="iconbtn" data-act="receipt" aria-label="${esc(t('scanReceipt'))}" title="${esc(t('scanReceipt'))}">${I.camera}</button></div>
@@ -537,8 +537,22 @@ function flushDayNote() {
 function sheetAct(act, v) {
   if (act.startsWith('m-')) return mealAct(act, v);
   if (act.startsWith('r-')) return receiptAct(act, v);
+  if (act === 'p-del') { store.deleteItem(ui.sheet.itemId).catch(() => { }); return closeSheet(); }
   if (act === 'p-save') {
     const s = ui.sheet, patch = {};
+    if (s.itemId) {   // renamed in the long-press editor: update the list entry and carry the product memory over
+      const nn = s.nameInput.trim();
+      if (!nn) { $('#p-name')?.focus(); return; }
+      if (nn !== s.fullName) {
+        store.updateItem(s.itemId, { name: nn }).catch(() => { });
+        const nk = itemKey(nn);
+        if (nk !== s.key) {
+          const old = S.products[s.key], ex = S.products[nk];
+          if (old && !ex) { const { name: _n, ...rest } = old; Object.assign(patch, rest); }
+          s.key = nk; s.name = ex?.name || parseQty(nn).name; s.catWas = ex?.cat ?? (old && !ex ? old.cat ?? null : null);
+        }
+      }
+    }
     for (const [k] of STORES) {
       const raw = s.vals[k].trim().replace(',', '.'), num = raw === '' ? null : Math.round(parseFloat(raw) * 100) / 100;
       if (raw !== '' && !(num >= 0)) { toast(t('badPrice')); return; }
@@ -595,25 +609,27 @@ function sheetAct(act, v) {
 }
 
 /* ---------- price sheet ---------- */
-function openPrice(item) {
+function openPrice(item, editName = false) {
   const p = priceOf(item.name) || {};
-  ui.sheet = { kind: 'price', name: p.name || parseQty(item.name).name, key: itemKey(item.name), cat: catOf(item.name), catWas: p.cat || null, vals: Object.fromEntries(STORES.map(([k]) => [k, p[k]?.price != null ? String(p[k].price).replace('.', getLang() === 'pl' ? ',' : '.') : ''])), at: Object.fromEntries(STORES.map(([k]) => [k, p[k]?.at || 0])) };
+  ui.sheet = { kind: 'price', itemId: editName ? item.id : null, fullName: item.name, nameInput: item.name, name: p.name || parseQty(item.name).name, key: itemKey(item.name), cat: catOf(item.name), catWas: p.cat || null, vals: Object.fromEntries(STORES.map(([k]) => [k, p[k]?.price != null ? String(p[k].price).replace('.', getLang() === 'pl' ? ',' : '.') : ''])), at: Object.fromEntries(STORES.map(([k]) => [k, p[k]?.at || 0])) };
   renderSheet(true);
 }
 function renderPriceSheet(first) {
   const s = ui.sheet;
   $('#sheet-root').innerHTML = `<div class="scrim" data-sact="close"></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>
-    <div class="sheet-h"><h2>${esc(s.name)}</h2><button class="iconbtn" data-sact="close">${I.x}</button></div>
+    <div class="sheet-h"><h2>${esc(s.itemId ? t('editItem') : s.name)}</h2><button class="iconbtn" data-sact="close">${I.x}</button></div>
     <div class="sheet-b">
+      ${s.itemId ? `<div class="field"><label>${t('itemName')}</label><input class="in title" id="p-name" data-pname value="${esc(s.nameInput)}" maxlength="80" autocomplete="off" enterkeyhint="done"></div>` : ''}
       <div class="field"><label>${t('category')}</label><select class="in" data-pcat>${CAT_IDS.map(c => `<option value="${c}" ${s.cat === c ? 'selected' : ''}>${esc(catLabel(c, getLang()))}</option>`).join('')}</select></div>
       ${STORES.map(([k, label]) => `<div class="field"><label>${label}${s.at[k] ? ` <span class="muted" style="font-weight:400">· ${esc(fmtDate(R.ymd(new Date(s.at[k]))))}</span>` : ''}</label>
         <div class="row" style="align-items:center"><input class="in" inputmode="decimal" data-pf="${k}" value="${esc(s.vals[k])}" placeholder="0,00"><span style="flex:none;color:var(--ink2)">zł</span></div></div>`).join('')}
       <div class="hint">${t('priceHint')}</div>
+      ${s.itemId ? `<button type="button" class="btn danger" style="margin-top:12px" data-sact="p-del">${t('delete')}</button>` : ''}
     </div>
     <div class="sheet-f"><button type="button" class="btn ghost" data-sact="close">${t('cancel')}</button><button type="button" class="btn primary" data-sact="p-save">${t('save')}</button></div>
   </div>`;
-  if (first) setTimeout(() => $('[data-pf]')?.focus(), 60);
+  if (first) setTimeout(() => (s.itemId ? $('#p-name') : $('[data-pf]'))?.focus(), 60);
 }
 
 /* ---------- receipt scanning (on-device OCR, no API key) ---------- */
@@ -928,6 +944,7 @@ document.addEventListener('input', e => {
   if (e.target.dataset.pf && ui.sheet?.kind === 'price') ui.sheet.vals[e.target.dataset.pf] = e.target.value;
   if (e.target.dataset.rf && ui.sheet?.kind === 'receipt') ui.sheet.rows[+e.target.dataset.rf].name = e.target.value;
   if (e.target.matches('[data-pcat]') && ui.sheet?.kind === 'price') ui.sheet.cat = e.target.value;
+  if (e.target.matches('[data-pname]') && ui.sheet?.kind === 'price') ui.sheet.nameInput = e.target.value;
   const mf = e.target.dataset.mf;
   if (mf && ui.sheet?.kind === 'meal') {
     const d = ui.sheet.draft; d[mf] = e.target.value;
@@ -954,6 +971,7 @@ document.addEventListener('change', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ui.sheet) closeSheet();
   if (e.key === 'Enter' && e.target.id === 'f-title') { e.preventDefault(); sheetAct('save'); }
+  if (e.key === 'Enter' && e.target.id === 'p-name') { e.preventDefault(); sheetAct('p-save'); }
   if (e.key === 'Enter' && e.target.id === 'm-name') { e.preventDefault(); mealAct('m-save'); }
 });
 // day rollover while the app stays open
@@ -964,6 +982,23 @@ function rollover() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { rollover(); refreshPush(); } });
 setInterval(rollover, 60000);
+
+/* ---------- long-press on a shopping entry = edit (a short tap still ticks it) ---------- */
+let lp = null, lpFired = false;
+document.addEventListener('pointerdown', e => {
+  const row = e.target.closest('[data-lp]'); if (!row || e.target.closest('.x')) return;
+  lpFired = false; const x0 = e.clientX, y0 = e.clientY;
+  lp = { x0, y0, timer: setTimeout(() => {
+    const it = S.shopping.find(i => i.id === row.dataset.lp); if (!it) return;
+    lpFired = true; navigator.vibrate?.(15); row.classList.add('pressed'); setTimeout(() => row.classList.remove('pressed'), 200);
+    openPrice(it, true);
+  }, 480) };
+});
+const lpCancel = () => { if (lp) { clearTimeout(lp.timer); lp = null; } };
+document.addEventListener('pointermove', e => { if (lp && Math.hypot(e.clientX - lp.x0, e.clientY - lp.y0) > 10) lpCancel(); });
+document.addEventListener('pointerup', lpCancel); document.addEventListener('pointercancel', lpCancel);
+document.addEventListener('click', e => { if (lpFired && e.target.closest('[data-lp]')) { e.stopPropagation(); e.preventDefault(); lpFired = false; } }, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest('[data-lp]')) e.preventDefault(); });
 
 /* ---------- boot ---------- */
 (async () => {

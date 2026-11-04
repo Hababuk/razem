@@ -1,5 +1,5 @@
 // Service worker: offline app shell + push notifications.
-const VERSION = 'razem-v16';
+const VERSION = 'razem-v17';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store/index.js', 'store/base.js', 'store/firebase.js', 'store/local.js', 'recur.js', 'cats.js', 'receipt.js', 'i18n.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/badge-96.png'];
 

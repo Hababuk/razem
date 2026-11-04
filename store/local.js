@@ -56,6 +56,7 @@ class LocalStore extends Base {
     this._sync(); return Promise.resolve();
   }
   deleteRecipe(id) { this.d.recipes = this.d.recipes.filter(x => x.id !== id); this._sync(); return Promise.resolve(); }
+  updateItem(id, patch) { const i = this.d.shopping.find(x => x.id === id); if (i) Object.assign(i, patch); this._sync(); return Promise.resolve(); }
   toggleItem(item) { const i = this.d.shopping.find(x => x.id === item.id); i.done = !i.done; i.doneAt = Date.now(); this._sync(); return Promise.resolve(); }
   deleteItem(id) { this.d.shopping = this.d.shopping.filter(x => x.id !== id); this._sync(); return Promise.resolve(); }
   clearDone() { this.d.shopping = this.d.shopping.filter(x => !x.done); this._sync(); return Promise.resolve(); }

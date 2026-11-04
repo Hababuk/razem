@@ -326,3 +326,6 @@ textarea.in { height: auto; min-height: 64px; padding: 10px 12px; resize: vertic
 .privtog .sw2::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: .2s; }
 .privtog.on { border-color: var(--accent); } .privtog.on > svg { color: var(--accent); }
 .privtog.on .sw2 { background: var(--accent); } .privtog.on .sw2::after { left: 19px; }
+
+.item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; transition: background .15s; }
+.item.pressed { background: var(--accent-soft); }

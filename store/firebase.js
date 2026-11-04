@@ -156,6 +156,7 @@ class FireStore extends Base {
     return this._w(this.F.setDoc(this.hRef('products', key), data, { merge: true }));
   }
   deleteRecipe(id) { return this._w(this.F.deleteDoc(this.hRef('recipes', id))); }
+  updateItem(id, patch) { return this._w(this.F.updateDoc(this.hRef('shopping', id), patch)); }
   toggleItem(item) { return this._w(this.F.updateDoc(this.hRef('shopping', item.id), { done: !item.done, doneAt: Date.now() })); }
   deleteItem(id) { return this._w(this.F.deleteDoc(this.hRef('shopping', id))); }
   clearDone() {
