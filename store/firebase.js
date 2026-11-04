@@ -35,28 +35,38 @@ class FireStore extends Base {
   _listen(hid) {
     const { doc, collection, onSnapshot, query, where } = this.F;
     const h = doc(this.db, 'households', hid);
-    const err = e => console.warn(e);
+    const err = e => console.warn(e), since = addDays(today(), -400);
+    const toMap = s => { const m = {}; s.forEach(d => { m[d.id] = d.data(); }); return m; };
+    this._sh = { tasks: [], comps: {}, notes: {} }; this._pr = { tasks: [], comps: {}, notes: {} };
+    const merge = () => this.emit({ tasks: [...this._sh.tasks, ...this._pr.tasks], comps: { ...this._sh.comps, ...this._pr.comps }, notes: { ...this._sh.notes, ...this._pr.notes } });
     this.hUnsubs = [
       onSnapshot(h, s => {
         if (!s.exists() || !s.data().members?.includes(this.state.user.uid)) return this.emit({ phase: 'noHousehold', household: null });
         this.emit({ household: { id: hid, ...s.data() }, phase: 'ready' });
       }, () => this.emit({ phase: 'noHousehold', household: null })),
-      onSnapshot(collection(h, 'tasks'), s => this.emit({ tasks: s.docs.map(d => ({ id: d.id, ...d.data() })) }), err),
-      onSnapshot(query(collection(h, 'completions'), where('date', '>=', addDays(today(), -400))), s => {
-        const m = {}; s.forEach(d => { m[d.id] = d.data(); }); this.emit({ comps: m });
-      }, err),
+      // shared tasks live in the household; private ones under users/{me}/… where the rules let only me read them
+      onSnapshot(collection(h, 'tasks'), s => { this._sh.tasks = s.docs.map(d => ({ id: d.id, ...d.data() })); merge(); }, err),
+      onSnapshot(query(collection(h, 'completions'), where('date', '>=', since)), s => { this._sh.comps = toMap(s); merge(); }, err),
+      onSnapshot(this._mine('ptasks'), s => { this._pr.tasks = s.docs.map(d => ({ id: d.id, ...d.data(), private: true })); merge(); }, err),
+      onSnapshot(query(this._mine('pcomps'), where('date', '>=', since)), s => { this._pr.comps = toMap(s); merge(); }, err),
+      onSnapshot(query(this._mine('pnotes'), where('date', '>=', since)), s => { this._pr.notes = toMap(s); merge(); }, err),
       onSnapshot(collection(h, 'shopping'), s => this.emit({ shopping: s.docs.map(d => ({ id: d.id, ...d.data() })) }), err),
       onSnapshot(query(collection(h, 'meals'), where('date', '>=', addDays(today(), -60))), s => {
         const m = {}; s.forEach(d => { m[d.id] = d.data(); }); this.emit({ meals: m });
       }, err),
       onSnapshot(collection(h, 'recipes'), s => this.emit({ recipes: s.docs.map(d => ({ id: d.id, ...d.data() })) }), err),
-      onSnapshot(query(collection(h, 'notes'), where('date', '>=', addDays(today(), -400))), s => {
-        const m = {}; s.forEach(d => { m[d.id] = d.data(); }); this.emit({ notes: m });
-      }, err),
+      onSnapshot(query(collection(h, 'notes'), where('date', '>=', since)), s => { this._sh.notes = toMap(s); merge(); }, err),
       onSnapshot(collection(h, 'products'), s => { const m = {}; s.forEach(d => { m[d.id] = d.data(); }); this.emit({ products: m }); }, err),
     ];
   }
   hRef(...p) { return this.F.doc(this.db, 'households', this.hid, ...p); }
+  _mine(c) { return this.F.collection(this.db, 'users', this.state.user.uid, c); }
+  _isPriv(id) { return this._pr?.tasks.some(t => t.id === id) ? true : this._sh?.tasks.some(t => t.id === id) ? false : null; }
+  _tRef(id, priv) { return priv ? this.F.doc(this._mine('ptasks'), id) : this.hRef('tasks', id); }
+  _cRef(taskId, date, kind) {   // kind: 'completions' | 'notes'
+    const id = compId(taskId, date);
+    return this._isPriv(taskId) ? this.F.doc(this._mine(kind === 'notes' ? 'pnotes' : 'pcomps'), id) : this.hRef(kind, id);
+  }
   // writes resolve when the server acks; the UI updates instantly from the local cache, so don't block on them
   _w(p) { return p.catch(e => { this.onError?.(e); throw e; }); }
 
@@ -86,21 +96,41 @@ class FireStore extends Base {
   updateHousehold(patch) { return this._w(this.F.updateDoc(this.hRef(), patch)); }
 
   saveTask(task) {
-    const { setDoc, collection, doc, serverTimestamp } = this.F;
-    const { id, ...data } = task;
-    const ref = id ? this.hRef('tasks', id) : doc(collection(this.db, 'households', this.hid, 'tasks'));
-    if (!id) { data.createdBy = this.state.user.uid; data.createdAt = serverTimestamp(); }
+    const { setDoc, collection, doc, serverTimestamp } = this.F, uid = this.state.user.uid;
+    const { id, private: want, ...data } = task;
+    const cur = id ? this._isPriv(id) : null, priv = want ?? cur ?? false;
+    if (priv) { data.private = true; data.assignee = uid; }
+    if (id && cur !== null && want !== undefined && want !== cur) return this._moveTask(id, data, priv);
+    const ref = id ? this._tRef(id, priv) : doc(priv ? this._mine('ptasks') : collection(this.db, 'households', this.hid, 'tasks'));
+    if (!id) { data.createdBy = uid; data.createdAt = serverTimestamp(); }
     return this._w(setDoc(ref, data, { merge: true }));
   }
-  deleteTask(id) { return this._w(this.F.deleteDoc(this.hRef('tasks', id))); }
+  /** Shared <-> private: move the task with its history and day notes in one batch. */
+  _moveTask(id, patch, toPriv) {
+    const b = this.F.writeBatch(this.db), from = toPriv ? this._sh : this._pr;
+    const old = from.tasks.find(t => t.id === id) || {};
+    const { private: _p, ...base } = old; delete base.id;
+    const data = { ...base, ...patch }; if (!toPriv) delete data.private;
+    b.set(this._tRef(id, toPriv), data); b.delete(this._tRef(id, !toPriv));
+    for (const [kind, privKind] of [['completions', 'pcomps'], ['notes', 'pnotes']]) {
+      const src = kind === 'notes' ? from.notes : from.comps;
+      for (const [k, v] of Object.entries(src)) {
+        if (v.taskId !== id) continue;
+        const sharedRef = this.hRef(kind, k), privRef = this.F.doc(this._mine(privKind), k);
+        b.set(toPriv ? privRef : sharedRef, v); b.delete(toPriv ? sharedRef : privRef);
+      }
+    }
+    return this._w(b.commit());
+  }
+  deleteTask(id) { return this._w(this.F.deleteDoc(this._tRef(id, this._isPriv(id)))); }
   setCompletion(taskId, date, status) {
-    const ref = this.hRef('completions', compId(taskId, date));
+    const ref = this._cRef(taskId, date, 'completions');
     if (!status) return this._w(this.F.deleteDoc(ref));
     return this._w(this.F.setDoc(ref, { taskId, date, status, by: this.state.user.uid, at: Date.now() }));
   }
   /** Note for one day of a task ("walked 20 min, he was limping"). Empty text = remove. */
   setNote(taskId, date, text) {
-    const ref = this.hRef('notes', compId(taskId, date));
+    const ref = this._cRef(taskId, date, 'notes');
     return this._w(text ? this.F.setDoc(ref, { taskId, date, text, by: this.state.user.uid, at: Date.now() }) : this.F.deleteDoc(ref));
   }
   addItem(name) {

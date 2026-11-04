@@ -23,12 +23,22 @@ async function handle(hdoc, idx) {
   const yday = addDays(date, -1);
 
   // active tasks + one-offs nobody has closed yet (old finished one-offs are never read)
-  const [actS, openS] = await Promise.all([
+  // shared tasks + each member's private tasks (users/{uid}/ptasks — the admin key can read them; the other member can't)
+  const members = H.members || [];
+  const priv = uid => db.collection('users').doc(uid).collection('ptasks');
+  const snaps = await Promise.all([
     ref.collection('tasks').where('endDate', '>=', yday).get(),
     ref.collection('tasks').where('closed', '==', false).get(),
+    ...members.flatMap(u => [priv(u).where('endDate', '>=', yday).get(), priv(u).where('closed', '==', false).get()]),
   ]);
-  const byId = new Map(); [...actS.docs, ...openS.docs].forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+  const byId = new Map();
+  snaps.forEach((sn, i) => {
+    const owner = i < 2 ? null : members[Math.floor((i - 2) / 2)];
+    sn.docs.forEach(d => byId.set(d.id, owner ? { id: d.id, ...d.data(), private: true, _owner: owner, assignee: owner } : { id: d.id, ...d.data() }));
+  });
   const tasks = [...byId.values()];
+  const ownerOf = new Map(tasks.filter(t => t._owner).map(t => [t.id, t._owner]));
+  const compDoc = id => { const o = ownerOf.get(id.slice(0, id.lastIndexOf('_'))); return o ? db.collection('users').doc(o).collection('pcomps').doc(id) : ref.collection('completions').doc(id); };
 
   const tag = `home#${idx}`;
   if (process.env.RAZEM_DIAG || process.argv.includes('--diag')) {   // counts only — nothing private
@@ -46,10 +56,11 @@ async function handle(hdoc, idx) {
 
   const need = neededCompletions(cands, date);
   const [byIdS, subsS, mealS, ...dayS] = await Promise.all([
-    need.ids.length ? db.getAll(...need.ids.map(id => ref.collection('completions').doc(id))) : [],
+    need.ids.length ? db.getAll(...need.ids.map(compDoc)) : [],
     ref.collection('pushSubs').get(),
     cands.some(c => c.kind === 'morning') ? ref.collection('meals').doc(date).get() : null,
-    ...need.days.map(d => ref.collection('completions').where('date', '==', d).get()),
+    ...need.days.flatMap(d => [ref.collection('completions').where('date', '==', d).get(),
+      ...members.map(u => db.collection('users').doc(u).collection('pcomps').where('date', '==', d).get())]),
   ]);
   const comps = {};
   byIdS.forEach(d => { if (d.exists) comps[d.id] = d.data(); });
@@ -60,11 +71,18 @@ async function handle(hdoc, idx) {
   const mc = cands.find(c => c.kind === 'month');
   if (mc) {
     const ym = mc.key.split('@')[1], from = monthRange(prevMonth(ym)).first, to = monthRange(ym).last;
-    const [mt, mcs] = await Promise.all([
+    const [mt, mcs, ...pv] = await Promise.all([
       ref.collection('tasks').where('endDate', '>=', from).get(),
       ref.collection('completions').where('date', '>=', from).where('date', '<=', to).get(),
+      ...members.flatMap(u => [priv(u).where('endDate', '>=', from).get(),
+        db.collection('users').doc(u).collection('pcomps').where('date', '>=', from).where('date', '<=', to).get()]),
     ]);
-    monthData = { tasks: mt.docs.map(d => ({ id: d.id, ...d.data() })), comps: Object.fromEntries(mcs.docs.map(d => [d.id, d.data()])) };
+    const mtasks = mt.docs.map(d => ({ id: d.id, ...d.data() })), mcomps = Object.fromEntries(mcs.docs.map(d => [d.id, d.data()]));
+    members.forEach((u, i) => {
+      pv[2 * i].docs.forEach(d => mtasks.push({ id: d.id, ...d.data(), private: true, _owner: u, assignee: u }));
+      pv[2 * i + 1].docs.forEach(d => { mcomps[d.id] = d.data(); });
+    });
+    monthData = { tasks: mtasks, comps: mcomps };
   }
   const { outbox, changed } = build({ household: H, tasks, cands, sent, comps, meal: mealS?.exists ? mealS.data().name : null, date, minutes, monthData });
 

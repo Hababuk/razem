@@ -104,8 +104,9 @@ export function build({ household: H, tasks, cands, sent, comps, meal, date, min
       if (!monthData) continue;
       const ym = c.key.split('@')[1], py = prevMonth(ym), name = M.months[+ym.slice(5) - 1];
       for (const uid of members) {
-        const cur = monthStats(monthData.tasks, monthData.comps, ym).total, prev = monthStats(monthData.tasks, monthData.comps, py).total;
-        const mine = monthStats(monthData.tasks, monthData.comps, ym, { uid }).total;
+        const shared = monthData.tasks.filter(t => !t.private);                      // household % never includes private tasks
+        const cur = monthStats(shared, monthData.comps, ym).total, prev = monthStats(shared, monthData.comps, py).total;
+        const mine = monthStats(monthData.tasks.filter(t => !t.private || t._owner === uid), monthData.comps, ym, { uid }).total;
         if (cur.pct == null) continue;
         const d = prev.pct != null ? cur.pct - prev.pct : null;
         const body = M.monBody(cur.pct, d) + (members.length > 1 && mine.pct != null ? ` · ${H.names?.[uid] || ''} ${mine.pct}%` : '');

@@ -27,6 +27,7 @@ const I = {
   bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/>'),
   meal: svg('<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 0-3.5 2.5-3.5 6v4H17"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
   note: svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
 };
 let toastT;
@@ -105,6 +106,7 @@ function taskRow(task, date, { overdueRow = false, ask = false } = {}) {
   const c = S.comps[R.compId(task.id, occ)];
   const done = c?.status === 'done', skip = c?.status === 'skip', missed = c?.status === 'missed';
   const meta = [];
+  if (task.private) meta.push(`<span class="lockic" title="${esc(t('privateTask'))}">${I.lock}</span>`);
   if (task.time) {
     const late = !c && occ === todayStr() && R.toMin(task.time) < nowMin();
     meta.push(`<span class="time ${late ? 'late' : ''}">${esc(task.time)}</span>`);
@@ -487,6 +489,7 @@ function renderSheet(first) {
     <div class="sheet-h"><h2>${isNew ? t('newTask') : t('editTask')}</h2><button class="iconbtn" data-sact="close" aria-label="${t('cancel')}">${I.x}</button></div>
     <div class="sheet-b">
       <div class="field"><input class="in title" id="f-title" data-f="title" value="${esc(d.title)}" placeholder="${esc(t('title'))}" maxlength="120" enterkeyhint="done"></div>
+      ${m.length > 1 ? `<button type="button" class="privtog ${d.private ? 'on' : ''}" data-sact="private">${I.lock}<span><b>${t('privateTask')}</b><small>${t(d.private ? 'privateOn' : 'privateOff')}</small></span><i class="sw2"></i></button>` : ''}
       <div class="row field"><div><label>${t('date')}</label>${datePicker('date', d.date)}</div>
         <div><label>${t('time')}${d.time ? ` · <button type="button" class="linkbtn" data-sact="clear-time">${t('clear')}</button>` : ''}</label>${timePicker('task', d.time, '—')}</div></div>
       <div class="field"><label>${t('repeat')}</label>
@@ -495,7 +498,7 @@ function renderSheet(first) {
         ${r.type !== 'none' ? `<div class="inline-every">${t('every')} <input class="in" type="number" min="1" max="99" inputmode="numeric" data-f="every" value="${r.every || 1}"> ${unit}</div>
           <div style="margin-top:10px"><label class="lbl">${t('ends')}</label>${datePicker('until', d.until, d.date)}</div>` : ''}
       </div>
-      ${m.length > 1 ? `<div class="field"><label>${t('who')}</label><div class="chips">
+      ${m.length > 1 && !d.private ? `<div class="field"><label>${t('who')}</label><div class="chips">
         <button type="button" class="chip ${d.assignee === 'all' ? 'on' : ''}" data-sact="who" data-v="all">${t('both')}</button>
         ${m.map(u => `<button type="button" class="chip ${d.assignee === u ? 'on' : ''}" data-sact="who" data-v="${u}"><span class="dot" style="background:${colorOf(u)}"></span>${esc(nameOf(u))}</button>`).join('')}</div></div>` : ''}
       <div class="field"><label>${t('remindBefore')}</label>
@@ -554,6 +557,7 @@ function sheetAct(act, v) {
       d.repeat.type = v; if (v === 'weekly' && !d.repeat.days.length) d.repeat.days = [R.parseYmd(d.date || todayStr()).getDay()]; return renderSheet();
     case 'wday': { const i = +v, a = d.repeat.days; d.repeat.days = a.includes(i) ? a.filter(x => x !== i) : [...a, i]; return renderSheet(); }
     case 'who': d.assignee = v; return renderSheet();
+    case 'private': d.private = !d.private; if (d.private) d.assignee = me(); return renderSheet();
     case 'off': { const n = +v, a = d.remind.offsets; d.remind.offsets = a.includes(n) ? a.filter(x => x !== n) : [...a, n]; d.remind.on = d.remind.offsets.length > 0; d._remTouched = true; return renderSheet(); }
     case 'missed': flushDayNote(); setComp(d.id, s.ctxDate, 'missed'); return closeSheet();
     case 'skip': {
@@ -576,7 +580,7 @@ function sheetAct(act, v) {
       const task = {
         title: d.title, notes: d.notes.trim(), date: d.date, time: d.time || null,
         repeat: rec ? { type: d.repeat.type, every: d.repeat.every || 1, ...(d.repeat.type === 'weekly' ? { days: d.repeat.days } : {}) } : { type: 'none' },
-        until: rec && d.until ? d.until : null, assignee: d.assignee || 'all',
+        until: rec && d.until ? d.until : null, assignee: d.private ? me() : (d.assignee || 'all'), private: !!d.private,
         remind: { on: d.remind.offsets.length > 0, offsets: [...d.remind.offsets].sort((a, b) => b - a), nag: d.remind.nag || 0 },
       };
       // fields that let the reminder server read only relevant tasks

@@ -317,3 +317,12 @@ textarea.in { height: auto; min-height: 64px; padding: 10px 12px; resize: vertic
 .sumcard .mt { font-weight: 700; font-size: 17px; }
 .sumcard .mt small { display: block; font-size: 12px; color: var(--ink2); font-weight: 500; }
 .mb.nodata .mbar { opacity: .35; } .mb.nodata .mv { color: var(--ink3); font-weight: 400; }
+
+.lockic svg { width: 12px; height: 12px; color: var(--ink2); }
+.privtog { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); text-align: left; margin-bottom: 14px; }
+.privtog > svg { width: 20px; height: 20px; color: var(--ink2); flex: none; }
+.privtog span { flex: 1; min-width: 0; } .privtog b { display: block; font-size: 14px; } .privtog small { font-size: 12px; color: var(--ink2); }
+.privtog .sw2 { width: 40px; height: 24px; border-radius: 12px; background: var(--line); position: relative; flex: none; transition: .2s; }
+.privtog .sw2::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: .2s; }
+.privtog.on { border-color: var(--accent); } .privtog.on > svg { color: var(--accent); }
+.privtog.on .sw2 { background: var(--accent); } .privtog.on .sw2::after { left: 19px; }

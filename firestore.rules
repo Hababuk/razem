@@ -17,6 +17,10 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read, write: if allowed() && request.auth.uid == uid;
+      // private tasks, their history and notes: only the owner, never the other member
+      match /{coll}/{doc} {
+        allow read, write: if allowed() && request.auth.uid == uid && coll in ['ptasks', 'pcomps', 'pnotes'];
+      }
     }
 
     match /households/{hid} {
