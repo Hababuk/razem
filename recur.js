@@ -75,3 +75,34 @@ export function remindOffsets(task) {
 export function unfinished(tasks, comps, date, uid) {
   return tasks.filter(t => isRecurring(t) && occursOn(t, date) && assignedTo(t, uid) && !comps[compId(t.id, date)]);
 }
+
+/** First/last date of a month "YYYY-MM". */
+export function monthRange(ym) {
+  const [y, m] = ym.split('-').map(Number), days = new Date(y, m, 0).getDate();
+  return { first: `${ym}-01`, last: `${ym}-${pad(days)}`, days };
+}
+export const prevMonth = ym => { const [y, m] = ym.split('-').map(Number); return ymd(new Date(y, m - 2, 1)).slice(0, 7); };
+
+/**
+ * Month summary: per task and in total, how many times it was due, done, marked not done, skipped or left open.
+ * upTo = last date to count (today, for the running month). % = done / (due - skipped).
+ */
+export function monthStats(tasks, comps, ym, { uid = null, upTo = null } = {}) {
+  const { first, last } = monthRange(ym), end = upTo && upTo < last ? upTo : last;
+  const K = ['occ', 'done', 'missed', 'skip', 'open'], total = { occ: 0, done: 0, missed: 0, skip: 0, open: 0 }, rows = [];
+  for (const t of tasks) {
+    if (!assignedTo(t, uid) || (t.date && t.date > end) || (t.until && t.until < first)) continue;
+    const r = { task: t, occ: 0, done: 0, missed: 0, skip: 0, open: 0 };
+    for (let d = first; d <= end; d = addDays(d, 1)) {
+      if (!occursOn(t, d)) continue;
+      r.occ++;
+      const s = comps[compId(t.id, d)]?.status;
+      if (s === 'done') r.done++; else if (s === 'missed') r.missed++; else if (s === 'skip') r.skip++; else r.open++;
+    }
+    if (r.occ) { rows.push(r); K.forEach(k => { total[k] += r[k]; }); }
+  }
+  const pct = x => (x.occ - x.skip) > 0 ? Math.round(x.done * 100 / (x.occ - x.skip)) : null;
+  rows.forEach(r => { r.pct = pct(r); });
+  total.pct = pct(total);
+  return { rows, total, end };
+}

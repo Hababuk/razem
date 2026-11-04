@@ -26,6 +26,7 @@ const I = {
   rep: svg('<path d="M17 2.5 20.5 6 17 9.5"/><path d="M3.5 11.5V10a4 4 0 0 1 4-4h13M7 21.5 3.5 18 7 14.5"/><path d="M20.5 12.5V14a4 4 0 0 1-4 4h-13"/>'),
   bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/>'),
   meal: svg('<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 0-3.5 2.5-3.5 6v4H17"/>'),
+  stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   note: svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
 };
 let toastT;
@@ -47,7 +48,7 @@ function dayTitle(d) {
 /* ---------- state ---------- */
 function weekMon(d) { const x = R.parseYmd(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return R.ymd(x); }
 const ui = { view: 'today', day: todayStr(), lastToday: todayStr(), calMonth: todayStr().slice(0, 7), calDay: todayStr(),
-  filter: 'all', calMode: localStorage.getItem('razem-calmode') || 'month', shopOrder: localStorage.getItem('razem-shoporder') || 'added', layoutStore: 'biedronka', mealWeek: weekMon(todayStr()), authMode: 'signIn', sheet: null, push: 'unknown', authErr: '', busy: false, pending: null };
+  filter: 'all', calMode: localStorage.getItem('razem-calmode') || 'month', sumMonth: null, shopOrder: localStorage.getItem('razem-shoporder') || 'added', layoutStore: 'biedronka', mealWeek: weekMon(todayStr()), authMode: 'signIn', sheet: null, push: 'unknown', authErr: '', busy: false, pending: null };
 let store, S;
 
 const H = () => S.household || { members: [], names: {}, colors: {} };
@@ -170,6 +171,7 @@ function viewToday() {
     ${pushBanner()}
     ${st.total ? `<div class="progress"><div class="ring">${ring(st.pct)}<div class="pct">${st.pct}%</div></div>
       <div class="txt"><div class="big">${t('doneOf', { d: st.done, t: st.total })}</div>${people}</div></div>` : ''}
+    ${d === td ? summaryCard() : ''}
     ${mealCard(d)}
     ${filtersBar()}
     ${dayList(d)}
@@ -188,6 +190,7 @@ function pushBanner() {
     ${ui.push === 'off' ? `<button data-act="push-on">${t('enable')}</button>` : ''}<button data-act="banner-x" aria-label="x" style="color:var(--ink3)">${I.x}</button></div>`;
 }
 function viewCalendar() { return ui.calMode === 'week' ? viewWeek() : viewMonth(); }
+const sumBtn = () => `<button class="pill" data-act="summary" data-v="${(ui.calMode === 'week' ? weekMon(ui.calDay) : ui.calMonth + '-01').slice(0, 7)}">${I.stats.replace('<svg', '<svg width="14" height="14" style="vertical-align:-2px"')} ${t('monthSummary')}</button>`;
 const calSeg = () => `<div class="seg" style="width:180px"><button class="${ui.calMode === 'week' ? 'on' : ''}" data-act="calmode" data-v="week">${t('week')}</button><button class="${ui.calMode === 'month' ? 'on' : ''}" data-act="calmode" data-v="month">${t('month')}</button></div>`;
 function viewWeek() {
   const ws = weekMon(ui.calDay), td = todayStr(), uid = filterUid(), we = R.addDays(ws, 6);
@@ -206,8 +209,50 @@ function viewWeek() {
   return `<div class="screen">
     <div class="topbar"><h1 style="font-size:24px">${esc(title)}</h1>
       <div style="display:flex"><button class="iconbtn" data-act="calday" data-v="${R.addDays(ws, -7)}">${I.left}</button><button class="iconbtn" data-act="calday" data-v="${R.addDays(ws, 7)}">${I.right}</button></div></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">${calSeg()}${ws !== weekMon(td) ? `<button class="pill" data-act="calday" data-v="${td}">${t('backToToday')}</button>` : ''}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">${calSeg()}${ws !== weekMon(td) ? `<button class="pill" data-act="calday" data-v="${td}">${t('backToToday')}</button>` : sumBtn()}</div>
     ${filtersBar()}${body}</div>`;
+}
+function viewSummary() {
+  const td = todayStr(), cur = td.slice(0, 7), ym = ui.sumMonth || cur, uid = filterUid();
+  const opts = m => ({ uid, upTo: m === cur ? td : null });
+  const st = R.monthStats(S.tasks, S.comps, ym, opts(ym));
+  const pm = R.prevMonth(ym), ps = R.monthStats(S.tasks, S.comps, pm, opts(pm));
+  const [y, m] = ym.split('-').map(Number), mName = mm => t('months')[+mm.slice(5) - 1];
+  const delta = st.total.pct != null && ps.total.pct != null ? st.total.pct - ps.total.pct : null;
+  const dTxt = (d, ref) => d == null ? '' : `<span class="delta ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${d > 0 ? '↑' : d < 0 ? '↓' : '='} ${Math.abs(d)} ${t('pts')}${ref ? ' ' + esc(t('vsMonth', { m: ref.toLowerCase() })) : ''}</span>`;
+  const hist = []; for (let i = 5, k = ym; i >= 0; i--) { hist.unshift(k); k = R.prevMonth(k); }
+  const bars = hist.map(k => ({ k, p: R.monthStats(S.tasks, S.comps, k, opts(k)).total.pct }));
+  const anyHist = bars.filter(b => b.p != null).length > 1;
+  const people = H().members.length > 1 && ui.filter === 'all' ? `<div class="people">${H().members.map(u => {
+    const s2 = R.monthStats(S.tasks, S.comps, ym, { uid: u, upTo: ym === cur ? td : null }).total; return s2.pct != null ? `<span><span class="dot" style="background:${colorOf(u)}"></span>${esc(nameOf(u))} ${s2.pct}%</span>` : '';
+  }).join('')}</div>` : '';
+  const prevRows = Object.fromEntries(ps.rows.map(r => [r.task.id, r.pct]));
+  const rows = st.rows.slice().sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101) || a.task.title.localeCompare(b.task.title));
+  const T = st.total, next = ym < cur ? R.ymd(new Date(y, m, 1)).slice(0, 7) : null;
+  return `<div class="screen">
+    <div class="topbar"><div style="display:flex;align-items:center;gap:4px"><button class="iconbtn" data-act="view" data-v="calendar" aria-label="back">${I.left}</button>
+      <div><h1 style="font-size:24px">${esc(mName(ym))} <span style="color:var(--ink3);font-weight:500">${y}</span></h1><div class="sub">${t('monthSummary')}${ym === cur ? ' · ' + t('soFar') : ''}</div></div></div>
+      <div style="display:flex"><button class="iconbtn" data-act="summary" data-v="${pm}">${I.left}</button>${next ? `<button class="iconbtn" data-act="summary" data-v="${next}">${I.right}</button>` : ''}</div></div>
+    ${filtersBar()}
+    ${T.occ ? `<div class="progress"><div class="ring">${ring(T.pct)}<div class="pct">${T.pct ?? '–'}%</div></div>
+      <div class="txt"><div class="big">${t('doneOf', { d: T.done, t: T.occ - T.skip })}</div>${dTxt(delta, mName(pm))}${people}</div></div>
+    <div class="counts"><div><b>${T.done}</b>${t('completed')}</div><div><b>${T.missed}</b>${t('markMissed')}</div><div><b>${T.open}</b>${t('notMarked')}</div><div><b>${T.skip}</b>${t('skipped')}</div></div>
+    ${anyHist ? `<div class="sec">${t('monthOverMonth')}</div><div class="mom">${bars.map(b => `<button class="mb ${b.k === ym ? 'sel' : ''} ${b.p == null ? 'nodata' : ''}" data-act="summary" data-v="${b.k}"><span class="mv">${b.p != null ? b.p + '%' : '–'}</span><span class="mbar"><i style="height:${b.p ?? 0}%"></i></span><span class="ml">${esc(mName(b.k).slice(0, 3))}</span></button>`).join('')}</div>` : ''}
+    <div class="sec">${t('allTasks')}</div>
+    <div class="list">${rows.map(r => `<div class="srow2"><div class="sr-main"><div class="ttitle">${esc(r.task.title)}</div>
+        <div class="tmeta"><span>${R.isRecurring(r.task) ? `${r.done}/${r.occ - r.skip}` : esc(r.done ? t('completed') : r.missed ? t('markMissed') : r.skip ? t('skipped') : t('notMarked'))}</span>${r.missed && R.isRecurring(r.task) ? `<span class="late">✕ ${r.missed}</span>` : ''}${r.open && R.isRecurring(r.task) ? `<span>${t('notMarked').toLowerCase()} ${r.open}</span>` : ''}${prevRows[r.task.id] != null && r.pct != null ? dTxt(r.pct - prevRows[r.task.id]) : ''}</div>
+        <div class="sbar"><i style="width:${r.pct ?? 0}%"></i></div></div><span class="spct">${r.pct ?? '–'}%</span>${avatar(r.task.assignee)}</div>`).join('')}</div>`
+    : `<div class="empty"><div class="em">📅</div><b>${t('noTasksMonth')}</b></div>`}
+  </div>`;
+}
+function summaryCard() { // on Today during the first week of a month, until opened or dismissed
+  const td = todayStr(); if (+td.slice(8) > 7) return '';
+  const pm = R.prevMonth(td.slice(0, 7)); if (localStorage.getItem('razem-sum-seen') === pm) return '';
+  const st = R.monthStats(S.tasks, S.comps, pm).total; if (!st.occ || st.pct == null) return '';
+  const pp = R.monthStats(S.tasks, S.comps, R.prevMonth(pm)).total.pct, d = pp != null ? st.pct - pp : null;
+  return `<div class="sumcard"><button class="sc-main" data-act="summary-open" data-v="${pm}"><span class="mi">${I.stats}</span>
+    <span class="mt"><small>${esc(t('summaryReady', { m: t('months')[+pm.slice(5) - 1] }))}</small>${st.pct}% ${d != null ? `<span class="delta ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${d > 0 ? '↑' : d < 0 ? '↓' : '='} ${Math.abs(d)} ${t('pts')}</span>` : ''}</span></button>
+    <button class="iconbtn" data-act="summary-x" data-v="${pm}" aria-label="x">${I.x}</button></div>`;
 }
 function viewMonth() {
   const [y, m] = ui.calMonth.split('-').map(Number);
@@ -230,7 +275,7 @@ function viewMonth() {
   return `<div class="screen">
     <div class="topbar"><h1>${t('months')[m - 1]} <span style="color:var(--ink3);font-weight:500">${y}</span></h1>
       <div style="display:flex"><button class="iconbtn" data-act="month" data-v="${prev}">${I.left}</button><button class="iconbtn" data-act="month" data-v="${next}">${I.right}</button></div></div>
-    <div style="margin-bottom:10px">${calSeg()}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">${calSeg()}${sumBtn()}</div>
     ${filtersBar()}
     <div class="cal"><div class="cal-head">${head}</div><div class="cal-grid">${grid}</div>
       ${cnt ? `<div class="month-sum">${t('monthAvg', { p: Math.round(sum / cnt) })}</div>` : ''}</div>
@@ -391,7 +436,7 @@ function viewOnboard() {
 }
 function nav() {
   const n = S.shopping.filter(i => !i.done).length;
-  const b = (v, icon, label, badge = '') => `<button class="${ui.view === v ? 'on' : ''}" data-act="view" data-v="${v}">${icon}<span>${label}</span>${badge}</button>`;
+  const b = (v, icon, label, badge = '') => `<button class="${ui.view === v || (v === 'calendar' && ui.view === 'summary') ? 'on' : ''}" data-act="view" data-v="${v}">${icon}<span>${label}</span>${badge}</button>`;
   return `<nav class="nav"><div class="nav-in">${b('today', I.today, t('today'))}${b('calendar', I.cal, t('calendar'))}${b('meals', I.meal, t('meals'))}
     ${b('shopping', I.cart, t('shopping'), n ? `<span class="badge">${n}</span>` : '')}${b('settings', I.gear, t('settings'))}</div></nav>
     ${ui.view === 'today' || ui.view === 'calendar' ? `<button class="fab" data-act="new" aria-label="${t('newTask')}">${I.plus}</button>` : ''}`;
@@ -405,7 +450,7 @@ function render() {
   if (S.phase === 'loading') app.innerHTML = '<div class="boot"><div class="spinner"></div></div>';
   else if (S.phase === 'signedOut') app.innerHTML = viewAuth();
   else if (S.phase === 'noHousehold') app.innerHTML = viewOnboard();
-  else app.innerHTML = { today: viewToday, calendar: viewCalendar, meals: viewMeals, shopping: viewShopping, settings: viewSettings }[ui.view]() + nav();
+  else app.innerHTML = { today: viewToday, calendar: viewCalendar, meals: viewMeals, shopping: viewShopping, settings: viewSettings, summary: viewSummary }[ui.view]() + nav();
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch { } } }
 }
 
@@ -755,6 +800,7 @@ async function pushTest() {
 
 /* ---------- deep links from notifications ---------- */
 function handleOpen(p) {
+  if (p.summary) { if (S?.phase !== 'ready') { ui.pending = p; return; } ui.pending = null; localStorage.setItem('razem-sum-seen', p.summary); ui.view = 'summary'; ui.sumMonth = p.summary; render(); return; }
   if (!p.task || S.phase !== 'ready') { ui.pending = p.task ? p : null; return; }
   const task = S.tasks.find(x => x.id === p.task);
   if (!task) return; // tasks may not be loaded yet
@@ -777,6 +823,9 @@ document.addEventListener('click', async e => {
     case 'month': ui.calMonth = v; ui.calDay = v === todayStr().slice(0, 7) ? todayStr() : v + '-01'; return render();
     case 'filter': ui.filter = v; return render();
     case 'datefmt': localStorage.setItem('razem-datefmt', v); return render();
+    case 'summary': ui.view = 'summary'; ui.sumMonth = v; window.scrollTo(0, 0); return render();
+    case 'summary-open': localStorage.setItem('razem-sum-seen', v); ui.view = 'summary'; ui.sumMonth = v; window.scrollTo(0, 0); return render();
+    case 'summary-x': localStorage.setItem('razem-sum-seen', v); return render();
     case 'calmode': ui.calMode = v; localStorage.setItem('razem-calmode', v); return render();
     case 'newon': return openTask(null, null, v);
     case 'meal': return openMeal(v);
@@ -919,6 +968,7 @@ setInterval(rollover, 60000);
     navigator.serviceWorker.addEventListener('message', ev => { if (ev.data?.type === 'open') handleOpen(ev.data); });
   }
   const q = new URLSearchParams(location.search);
+  if (q.get('summary')) { ui.pending = { summary: q.get('summary') }; history.replaceState(null, '', location.pathname + (q.has('demo') ? '?demo' : '')); }
   if (q.get('task')) { ui.pending = { task: q.get('task'), date: q.get('date'), act: ['done', 'missed'].includes(q.get('act')) ? q.get('act') : null }; history.replaceState(null, '', location.pathname + (q.has('demo') ? '?demo' : '')); }
   try { store = await createStore(); }
   catch (e) { $('#app').innerHTML = `<div class="auth"><h1>⚠️</h1><p>${esc(e.message)}</p></div>`; return; }
@@ -932,7 +982,7 @@ setInterval(rollover, 60000);
       }
     }
     render();
-    if (ui.pending && s.phase === 'ready' && s.tasks.length) handleOpen(ui.pending);
+    if (ui.pending && s.phase === 'ready' && (s.tasks.length || ui.pending.summary)) handleOpen(ui.pending);
   });
   refreshPush();
 })();

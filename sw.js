@@ -1,5 +1,5 @@
 // Service worker: offline app shell + push notifications.
-const VERSION = 'razem-v14';
+const VERSION = 'razem-v15';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store/index.js', 'store/base.js', 'store/firebase.js', 'store/local.js', 'recur.js', 'cats.js', 'receipt.js', 'i18n.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/badge-96.png'];
 
@@ -31,7 +31,8 @@ self.addEventListener('notificationclick', e => {
   const act = ['done', 'missed'].includes(e.action) ? e.action : null;
   const msg = { type: 'open', task: d.task, date: d.date, act };
   const scope = self.registration.scope;
-  const url = d.task ? `${scope}?task=${encodeURIComponent(d.task)}&date=${d.date || ''}${act ? '&act=' + act : ''}` : scope;
+  if (d.summary) msg.summary = d.summary;
+  const url = d.summary ? `${scope}?summary=${d.summary}` : d.task ? `${scope}?task=${encodeURIComponent(d.task)}&date=${d.date || ''}${act ? '&act=' + act : ''}` : scope;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
     const c = cs.find(x => x.url.startsWith(scope));
     if (c) { c.postMessage(msg); return c.focus(); }

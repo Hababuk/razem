@@ -2,7 +2,7 @@
 // Reads as little as possible: tasks first; everything else only if something might be due.
 import admin from 'firebase-admin';
 import webpush from 'web-push';
-import { nowInTz, addDays } from '../recur.js';
+import { nowInTz, addDays, monthRange, prevMonth } from '../recur.js';
 import { candidates, pending, neededCompletions, build } from './core.mjs';
 
 const DRY = process.argv.includes('--dry');
@@ -55,7 +55,18 @@ async function handle(hdoc, idx) {
   byIdS.forEach(d => { if (d.exists) comps[d.id] = d.data(); });
   dayS.forEach(s => s.forEach(d => { comps[d.id] = d.data(); }));
 
-  const { outbox, changed } = build({ household: H, tasks, cands, sent, comps, meal: mealS?.exists ? mealS.data().name : null, date, minutes });
+  // month summary (1st of the month only): tasks and completions for last month and the one before, for the comparison
+  let monthData = null;
+  const mc = cands.find(c => c.kind === 'month');
+  if (mc) {
+    const ym = mc.key.split('@')[1], from = monthRange(prevMonth(ym)).first, to = monthRange(ym).last;
+    const [mt, mcs] = await Promise.all([
+      ref.collection('tasks').where('endDate', '>=', from).get(),
+      ref.collection('completions').where('date', '>=', from).where('date', '<=', to).get(),
+    ]);
+    monthData = { tasks: mt.docs.map(d => ({ id: d.id, ...d.data() })), comps: Object.fromEntries(mcs.docs.map(d => [d.id, d.data()])) };
+  }
+  const { outbox, changed } = build({ household: H, tasks, cands, sent, comps, meal: mealS?.exists ? mealS.data().name : null, date, minutes, monthData });
 
   const subs = subsS.docs.map(d => ({ ref: d.ref, ...d.data() }));
   console.log(`${tag} messages=${outbox.length} phones=${subs.length}`);

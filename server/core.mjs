@@ -1,6 +1,6 @@
 // Reminder rules — pure functions, no database code.
 // Any backend (the Firestore runner in remind.mjs today, a Pi/PocketBase server later) feeds data in and gets messages out.
-import { occursOn, compId, toMin, isRecurring, assignedTo, addDays, remindOffsets, unfinished } from '../recur.js';
+import { occursOn, compId, toMin, isRecurring, assignedTo, addDays, remindOffsets, unfinished, monthStats, prevMonth } from '../recur.js';
 
 export const WINDOW = 90;     // still send a reminder up to 90 min after its moment (worker may run late)
 export const LOOKAHEAD = 3;   // days ahead to check (offsets go up to 2 days)
@@ -13,6 +13,8 @@ export const MSG = {
     fu: tm => `Było na ${tm} — zrobione?`, done: '✓ Zrobione', missed: '✕ Nie zrobione',
     mTitle: 'Dzień dobry ☀️', mBody: (n, list) => `Dziś ${n} ${n === 1 ? 'zadanie' : n < 5 ? 'zadania' : 'zadań'}: ${list}`,
     yday: n => `Wczoraj niezamknięte: ${n}`, dinner: n => `Obiad: ${n}`,
+    months: ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'],
+    monTitle: m => `Podsumowanie: ${m}`, monBody: (p, d) => `Zrobione ${p}% zadań${d == null ? '' : d > 0 ? ` (↑ ${d} pkt)` : d < 0 ? ` (↓ ${-d} pkt)` : ' (bez zmian)'}`,
     eTitle: 'Zostało na dziś', eBody: (d, tot, list) => `${tot ? `${d}/${tot} zrobione (${Math.round(d * 100 / tot)}%). ` : ''}Do zrobienia: ${list}`,
   },
   en: {
@@ -20,6 +22,8 @@ export const MSG = {
     fu: tm => `Was due at ${tm} — done?`, done: '✓ Done', missed: '✕ Not done',
     mTitle: 'Good morning ☀️', mBody: (n, list) => `${n} task${n === 1 ? '' : 's'} today: ${list}`,
     yday: n => `Not closed yesterday: ${n}`, dinner: n => `Dinner: ${n}`,
+    months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    monTitle: m => `${m} summary`, monBody: (p, d) => `${p}% of tasks done${d == null ? '' : d > 0 ? ` (↑ ${d} pts)` : d < 0 ? ` (↓ ${-d} pts)` : ' (no change)'}`,
     eTitle: 'Left for today', eBody: (d, tot, list) => `${tot ? `${d}/${tot} done (${Math.round(d * 100 / tot)}%). ` : ''}Still to do: ${list}`,
   },
 };
@@ -49,6 +53,10 @@ export function candidates({ household: H, tasks, date, minutes }) {
   }
   if (H.morningAt && minutes >= toMin(H.morningAt) && minutes - toMin(H.morningAt) <= 180) out.push({ kind: 'morning', key: `_morning@${date}` });
   if (H.eveningAt && minutes >= toMin(H.eveningAt)) out.push({ kind: 'evening', key: `_evening@${date}` });
+  if (date.endsWith('-01')) {  // month summary on the 1st, at the morning-summary time (09:00 if that is off)
+    const at = toMin(H.morningAt || '09:00');
+    if (minutes >= at && minutes - at <= 180) out.push({ kind: 'month', key: `_month@${prevMonth(date.slice(0, 7))}` });
+  }
   return out;
 }
 
@@ -78,7 +86,7 @@ export function neededCompletions(cands, date) {
  * comps: map compId -> completion (at least the ones neededCompletions asked for)
  * meal: tonight's dinner name or null
  */
-export function build({ household: H, tasks, cands, sent, comps, meal, date, minutes }) {
+export function build({ household: H, tasks, cands, sent, comps, meal, date, minutes, monthData }) {
   const M = MSG[H.lang] || MSG.pl, members = H.members || [];
   const to = t => (!t.assignee || t.assignee === 'all') ? members : [t.assignee];
   const actions = [{ action: 'done', title: M.done }, { action: 'missed', title: M.missed }];
@@ -92,6 +100,18 @@ export function build({ household: H, tasks, cands, sent, comps, meal, date, min
     } else if (c.kind === 'fu') {
       outbox.push({ uids: to(t), payload: { title: t.title, body: M.fu(t.time), tag: `${t.id}_${date}`, data: { task: t.id, date }, actions } });
       changed[c.key] = { n: (sent[c.key]?.n || 0) + 1, last: minutes };
+    } else if (c.kind === 'month') {
+      if (!monthData) continue;
+      const ym = c.key.split('@')[1], py = prevMonth(ym), name = M.months[+ym.slice(5) - 1];
+      for (const uid of members) {
+        const cur = monthStats(monthData.tasks, monthData.comps, ym).total, prev = monthStats(monthData.tasks, monthData.comps, py).total;
+        const mine = monthStats(monthData.tasks, monthData.comps, ym, { uid }).total;
+        if (cur.pct == null) continue;
+        const d = prev.pct != null ? cur.pct - prev.pct : null;
+        const body = M.monBody(cur.pct, d) + (members.length > 1 && mine.pct != null ? ` · ${H.names?.[uid] || ''} ${mine.pct}%` : '');
+        outbox.push({ uids: [uid], payload: { title: M.monTitle(name), body, tag: `month_${ym}`, data: { summary: ym } } });
+      }
+      changed[c.key] = minutes;
     } else {
       const open = uid => tasks.filter(x => occursOn(x, date) && assignedTo(x, uid) && !comps[compId(x.id, date)])
         .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));

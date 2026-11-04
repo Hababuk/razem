@@ -291,3 +291,29 @@ textarea.in { height: auto; min-height: 64px; padding: 10px 12px; resize: vertic
 .tnote { font-size: 12px; color: var(--ink2); margin-top: 3px; font-style: italic; overflow-wrap: anywhere; }
 #toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
 #toast button { color: var(--accent); font-weight: 700; font-size: 14px; filter: brightness(1.6); white-space: nowrap; }
+
+/* monthly summary */
+.delta { display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--ink2); margin-top: 2px; }
+.delta.up { color: var(--accent); } .delta.down { color: var(--danger); }
+.counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
+.counts > div { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 8px 6px; text-align: center; font-size: 11.5px; color: var(--ink2); line-height: 1.2; }
+.counts b { display: block; font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mom { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 12px 10px 8px; }
+.mb { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--ink2); }
+.mb .mv { font-weight: 600; color: var(--ink); height: 14px; font-variant-numeric: tabular-nums; }
+.mb .mbar { width: 60%; height: 80px; background: var(--line); border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; }
+.mb .mbar i { display: block; width: 100%; background: color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 6px; }
+.mb.sel .mbar i { background: var(--accent); } .mb.sel .ml { color: var(--accent); font-weight: 700; }
+.srow2 { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.srow2:first-child { border-top: 0; }
+.sr-main { flex: 1; min-width: 0; }
+.sbar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+.sbar i { display: block; height: 100%; background: var(--accent); }
+.spct { font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; width: 40px; text-align: right; }
+.sumcard { display: flex; align-items: center; background: var(--card); border-radius: var(--r); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); margin-bottom: 12px; padding-right: 4px; }
+.sumcard .sc-main { flex: 1; display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left; }
+.sumcard .mi { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
+.sumcard .mi svg { width: 20px; height: 20px; }
+.sumcard .mt { font-weight: 700; font-size: 17px; }
+.sumcard .mt small { display: block; font-size: 12px; color: var(--ink2); font-weight: 500; }
+.mb.nodata .mbar { opacity: .35; } .mb.nodata .mv { color: var(--ink3); font-weight: 400; }
