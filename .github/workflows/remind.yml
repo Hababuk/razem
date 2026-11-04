@@ -1,0 +1,43 @@
+name: reminders
+on:
+  schedule:
+    - cron: '3-59/5 * * * *'   # every 5 min at :02, :07 … — off the busy :00/:05 marks, which GitHub delays most
+  workflow_dispatch:
+    inputs:
+      diag:
+        description: 'Print stored-data counts'
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --omit=dev --no-audit --no-fund   # exact versions from the lockfile (no surprise package updates near your secrets)
+        working-directory: server
+      - run: node remind.mjs
+        working-directory: server
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VAPID_PUBLIC: ${{ secrets.VAPID_PUBLIC }}
+          VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          RAZEM_DIAG: ${{ github.event_name == 'workflow_dispatch' && inputs.diag && '1' || '' }}
+      # GitHub pauses scheduled workflows after 60 days without repo activity; re-enabling keeps it alive.
+      - name: Keep schedule alive
+        if: github.event_name == 'schedule'
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/remind.yml/enable" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
