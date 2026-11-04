@@ -403,6 +403,9 @@ function viewSettings() {
       <button class="linkbtn" style="margin-top:8px" data-act="aisle-reset">${t('resetLayout')}</button></div>
     <div class="card"><h3>${t('data')}</h3><div class="muted" style="margin-bottom:10px">${t('exportHint')}</div>
       <button class="btn ghost" data-act="export">${t('export')}</button></div>
+    <div class="card"><h3>${t('theme')}</h3>
+      <div class="seg">${[['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]].map(([v, l]) => `<button class="${(localStorage.getItem('razem-theme') || 'auto') === v ? 'on' : ''}" data-act="theme" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="hint">${t('themeHint')}</div></div>
     <div class="card"><h3>${t('dateFormat')}</h3>
       <div class="seg">${[['mdy', '11/04/2026'], ['dmy', '04.11.2026']].map(([v, l]) => `<button class="${dateOrder() === v ? 'on' : ''}" data-act="datefmt" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="hint">${t('dateFormatHint')}</div></div>
@@ -443,6 +446,17 @@ function nav() {
     ${b('shopping', I.cart, t('shopping'), n ? `<span class="badge">${n}</span>` : '')}${b('settings', I.gear, t('settings'))}</div></nav>
     ${ui.view === 'today' || ui.view === 'calendar' ? `<button class="fab" data-act="new" aria-label="${t('newTask')}">${I.plus}</button>` : ''}`;
 }
+
+/* ---------- theme (per phone) ---------- */
+function applyTheme(v) {
+  if (v) localStorage.setItem('razem-theme', v);
+  const mode = localStorage.getItem('razem-theme') || 'auto', root = document.documentElement;
+  if (mode === 'auto') delete root.dataset.theme; else root.dataset.theme = mode;
+  const dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name=theme-color]').forEach(m => { m.removeAttribute('media'); m.content = dark ? '#16181b' : '#f3f1eb'; });
+}
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme());
 
 /* ---------- render ---------- */
 let renderQueued = false, touching = false, renderAfterTouch = false;
@@ -858,6 +872,7 @@ document.addEventListener('click', async e => {
     case 'calday': ui.calDay = v; if (v.slice(0, 7) !== ui.calMonth) ui.calMonth = v.slice(0, 7); return render();
     case 'month': ui.calMonth = v; ui.calDay = v === todayStr().slice(0, 7) ? todayStr() : v + '-01'; return render();
     case 'filter': ui.filter = v; return render();
+    case 'theme': applyTheme(v); return render();
     case 'datefmt': localStorage.setItem('razem-datefmt', v); return render();
     case 'summary': ui.view = 'summary'; ui.sumMonth = v; window.scrollTo(0, 0); return render();
     case 'summary-open': localStorage.setItem('razem-sum-seen', v); ui.view = 'summary'; ui.sumMonth = v; window.scrollTo(0, 0); return render();

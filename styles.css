@@ -1,14 +1,19 @@
 :root {
-  --bg: #f3f1eb; --card: #fdfcfa; --ink: #1d2024; --ink2: #5f646b; --ink3: #9a9fa6; --line: #e6e2d9;
+  --bg: #f3f1eb; --card: #fdfcfa; --seg-on: #fdfcfa; --ink: #1d2024; --ink2: #5f646b; --ink3: #9a9fa6; --line: #e6e2d9;
   --accent: #3f7d5c; --accent-soft: #e3efe7; --danger: #c2483a; --warn: #b7791f; --warn-soft: #fbf1df;
   --r: 14px; --shadow: 0 0 0 1px rgba(60,50,30,.06), 0 2px 10px rgba(60,50,30,.04);
   --nav-h: 64px; --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
   color-scheme: light dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #16181b; --card: #202327; --ink: #eceae6; --ink2: #a7abb0; --ink3: #6f747a; --line: #2e3237;
+/* theme: Auto follows the phone; Settings can force light or dark (html[data-theme]) */
+:root[data-theme="dark"] { --bg: #16181b; --card: #202327; --ink: #eceae6; --ink2: #a7abb0; --ink3: #6f747a; --line: #2e3237;
     --accent: #6cbf91; --accent-soft: #23362b; --danger: #ef7a6c; --warn: #e2b04f; --warn-soft: #362d1d;
-    --shadow: 0 1px 2px rgba(0,0,0,.3); }
+    --shadow: 0 0 0 1px rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.3); color-scheme: dark; --seg-on: #3a4048; }
+:root[data-theme="light"] { color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #16181b; --card: #202327; --ink: #eceae6; --ink2: #a7abb0; --ink3: #6f747a; --line: #2e3237;
+    --accent: #6cbf91; --accent-soft: #23362b; --danger: #ef7a6c; --warn: #e2b04f; --warn-soft: #362d1d;
+    --shadow: 0 0 0 1px rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.3); color-scheme: dark; --seg-on: #3a4048; }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); }
@@ -143,7 +148,7 @@ textarea.in { height: auto; min-height: 64px; padding: 10px 12px; resize: vertic
 .row > * { flex: 1; min-width: 0; }
 .seg { display: flex; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { flex: 1; height: 38px; border-radius: 9px; font-size: 14px; color: var(--ink2); white-space: nowrap; padding: 0 4px; }
-.seg button.on { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.seg button.on { background: var(--seg-on); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { height: 36px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
 .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
