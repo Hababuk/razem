@@ -63,6 +63,11 @@ class FireStore extends Base {
   _mine(c) { return this.F.collection(this.db, 'users', this.state.user.uid, c); }
   _isPriv(id) { return this._pr?.tasks.some(t => t.id === id) ? true : this._sh?.tasks.some(t => t.id === id) ? false : null; }
   _tRef(id, priv) { return priv ? this.F.doc(this._mine('ptasks'), id) : this.hRef('tasks', id); }
+  /** Tells the reminder runner the task list changed (it caches tasks between runs). */
+  _bump(priv) {
+    const v = { tasksRev: Date.now() };
+    (priv ? this.F.setDoc(this.F.doc(this.db, 'users', this.state.user.uid), v, { merge: true }) : this.F.updateDoc(this.hRef(), v)).catch(() => { });
+  }
   _cRef(taskId, date, kind) {   // kind: 'completions' | 'notes'
     const id = compId(taskId, date);
     return this._isPriv(taskId) ? this.F.doc(this._mine(kind === 'notes' ? 'pnotes' : 'pcomps'), id) : this.hRef(kind, id);
@@ -103,6 +108,7 @@ class FireStore extends Base {
     if (id && cur !== null && want !== undefined && want !== cur) return this._moveTask(id, data, priv);
     const ref = id ? this._tRef(id, priv) : doc(priv ? this._mine('ptasks') : collection(this.db, 'households', this.hid, 'tasks'));
     if (!id) { data.createdBy = uid; data.createdAt = serverTimestamp(); }
+    this._bump(priv);
     return this._w(setDoc(ref, data, { merge: true }));
   }
   /** Shared <-> private: move the task with its history and day notes in one batch. */
@@ -120,9 +126,10 @@ class FireStore extends Base {
         b.set(toPriv ? privRef : sharedRef, v); b.delete(toPriv ? sharedRef : privRef);
       }
     }
+    this._bump(true); this._bump(false);
     return this._w(b.commit());
   }
-  deleteTask(id) { return this._w(this.F.deleteDoc(this._tRef(id, this._isPriv(id)))); }
+  deleteTask(id) { const p = this._isPriv(id); this._bump(p); return this._w(this.F.deleteDoc(this._tRef(id, p))); }
   setCompletion(taskId, date, status) {
     const ref = this._cRef(taskId, date, 'completions');
     if (!status) return this._w(this.F.deleteDoc(ref));

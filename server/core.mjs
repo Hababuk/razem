@@ -92,7 +92,7 @@ export function build({ household: H, tasks, cands, sent, comps, meal, date, min
   const actions = [{ action: 'done', title: M.done }, { action: 'missed', title: M.missed }];
   const outbox = [], changed = {};
   for (const c of cands) {
-    if (c.task && comps[compId(c.task.id, c.occ)]) continue;      // already done / not done / skipped
+    if (c.task && comps[compId(c.task.id, c.occ)]) { changed[c.key] = c.kind === 'fu' ? { n: 99, last: minutes } : minutes; continue; } // already closed: never check it again
     const t = c.task;
     if (c.kind === 'pre') {
       outbox.push({ uids: to(t), payload: { title: t.title, body: c.late ? M.fu(t.time) : M.pre(c.off, t.time, c.k), tag: `${t.id}_${c.occ}`, data: { task: t.id, date: c.occ }, actions: c.k === 0 ? actions : [] } });
