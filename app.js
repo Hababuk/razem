@@ -693,11 +693,16 @@ async function loadTesseract() {
   await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.crossOrigin = 'anonymous'; sc.onload = res; sc.onerror = () => rej(new Error(t('ocrOffline'))); document.head.appendChild(sc); });
   return window.Tesseract;
 }
-async function prepImage(file) { // shrink + greyscale: faster and usually more accurate on thermal paper
+async function loadImage(file) {   // <img> applies the photo's EXIF rotation (iPhone photos are often stored sideways)
+  const url = URL.createObjectURL(file);
+  try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+async function prepImage(file) { // greyscale + contrast; enlarge small images (OCR needs ~30 px letters), shrink huge ones
   try {
-    const bmp = await createImageBitmap(file), sc = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas'); c.width = bmp.width * sc; c.height = bmp.height * sc;
-    const x = c.getContext('2d'); x.filter = 'grayscale(1) contrast(1.4)'; x.drawImage(bmp, 0, 0, c.width, c.height);
+    const img = await loadImage(file), w = img.naturalWidth, h = img.naturalHeight;
+    const sc = Math.min(Math.max(1, 1600 / w), 3200 / Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.filter = 'grayscale(1) contrast(1.4)'; x.drawImage(img, 0, 0, c.width, c.height);
     return await new Promise(r => c.toBlob(r, 'image/png'));
   } catch { return file; }
 }
@@ -706,11 +711,13 @@ async function scanReceipt(file) {
   try {
     const T = await loadTesseract();
     const worker = await T.createWorker('pol', 1, { logger: m => { if (m.status === 'recognizing text' && ui.sheet?.kind === 'receipt') { ui.sheet.progress = m.progress; const b = $('#ocr-bar'); if (b) b.style.width = Math.round(m.progress * 100) + '%'; } } });
+    // receipts read best as one block of text (PSM 6); keeping spaces helps separate the name from the price columns
+    await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
     const { data: { text } } = await worker.recognize(await prepImage(file));
     await worker.terminate();
     if (ui.sheet?.kind !== 'receipt') return;
     const { store: st, items } = parseReceipt(text);
-    ui.sheet = { kind: 'receipt', phase: 'review', store: st || (ui.shopOrder !== 'added' ? ui.shopOrder : 'biedronka'), detected: !!st,
+    ui.sheet = { kind: 'receipt', phase: 'review', text, showText: false, store: st || (ui.shopOrder !== 'added' ? ui.shopOrder : 'biedronka'), detected: !!st,
       rows: items.map(i => ({ raw: i.raw, name: matchProduct(i.raw) || i.name, unit: i.unit, qty: i.qty, on: true })) };
   } catch (e) { ui.sheet = { kind: 'receipt', phase: 'error', msg: e.message }; }
   renderSheet();
@@ -720,7 +727,8 @@ function renderReceiptSheet() {
   let body, foot = `<button type="button" class="btn ghost" data-sact="close">${t('cancel')}</button>`;
   if (s.phase === 'ocr') body = `<div class="empty"><div class="em">🧾</div><b>${t('ocrReading')}</b>${t('ocrFirst')}<div class="ocr-track"><i id="ocr-bar" style="width:${Math.round(s.progress * 100)}%"></i></div></div>`;
   else if (s.phase === 'error') body = `<div class="empty"><div class="em">⚠️</div><b>${esc(s.msg)}</b></div>`;
-  else if (!s.rows.length) body = `<div class="empty"><div class="em">🤔</div><b>${t('ocrNothing')}</b>${t('ocrTips')}</div>`;
+  else if (!s.rows.length) body = `<div class="empty"><div class="em">🤔</div><b>${t('ocrNothing')}</b>${t('ocrTips')}</div>`
+    + `<pre class="ocrtext">${esc(s.text || '')}</pre>`;
   else {
     body = `<div class="field"><label>${t('whichStore')}${s.detected ? ' · ' + t('detected') : ''}</label><div class="seg">${STORES.map(([k, l]) => `<button type="button" class="${s.store === k ? 'on' : ''}" data-sact="r-store" data-v="${k}">${l}</button>`).join('')}</div></div>
       <div class="hint" style="margin:-4px 2px 10px">${t('ocrReview')}</div>
@@ -729,6 +737,7 @@ function renderReceiptSheet() {
         <button type="button" class="check" style="--c:var(--accent)" data-sact="r-toggle" data-v="${i}">${I.check}</button>
         <div class="rmain"><input class="in" list="prod-dl" data-rf="${i}" value="${esc(r.name)}"><small>${esc(r.raw)}${r.qty !== 1 ? ` · ${String(r.qty).replace('.', ',')} ×` : ''}</small></div>
         <span class="rprice">${money(r.unit)}</span></div>`).join('')}</div>`;
+    body += `<button type="button" class="linkbtn" style="margin-top:12px" data-sact="r-text">${s.showText ? t('hideText') : t('showText')}</button>${s.showText ? `<pre class="ocrtext">${esc(s.text || '')}</pre>` : ''}`;
     foot += `<button type="button" class="btn primary" data-sact="r-save">${t('savePrices', { n: s.rows.filter(r => r.on).length })}</button>`;
   }
   root.innerHTML = `<div class="scrim" data-sact="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>
@@ -738,6 +747,7 @@ function renderReceiptSheet() {
 function receiptAct(act, v) {
   const s = ui.sheet;
   if (act === 'r-store') { s.store = v; return renderSheet(); }
+  if (act === 'r-text') { s.showText = !s.showText; return renderSheet(); }
   if (act === 'r-toggle') { s.rows[+v].on = !s.rows[+v].on; return renderSheet(); }
   if (act === 'r-save') {
     let n = 0;
