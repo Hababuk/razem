@@ -28,9 +28,15 @@ function tidy(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// A clean pasted list, one product per line: "Name; 8,99" (an optional "/kg" after the price is ignored)
+const LIST = /^\s*(.+?)\s*;\s*(\d{1,5}[.,]\d{2})\s*(?:zł)?\s*(?:\/\s*kg)?\s*$/i;
+
 export function parseReceipt(text) {
   const up = text.toUpperCase();
   const store = /LIDL/.test(up) ? 'lidl' : /BIEDRONK|JERONIMO/.test(up) ? 'biedronka' : null;
+  const raw = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean), listed = raw.map(l => l.match(LIST)).filter(Boolean);
+  if (listed.length && listed.length >= raw.length / 2)
+    return { store, items: listed.map(m => ({ raw: m[1], name: m[1], qty: 1, unit: num(m[2]), clean: true })).filter(i => i.unit > 0 && i.unit < 2000) };
   let lines = text.split(/\r?\n/).map(norm).filter(Boolean);
   const start = lines.findIndex(l => /PARAGON\s*FISKALNY/i.test(l));
   if (start >= 0) lines = lines.slice(start + 1);

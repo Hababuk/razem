@@ -15,6 +15,7 @@ const svg = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="cur
 const I = {
   today: svg('<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 5-5.5"/>'),
   cal: svg('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
+  paste: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5M9 10h6M9 14h6M9 18h3"/>'),
   camera: svg('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>'),
   up: svg('<path d="m6 15 6-6 6 6"/>'), down: svg('<path d="m6 9 6 6 6-6"/>'),
   cart: svg('<path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.5L20.5 8H6"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>'),
@@ -360,7 +361,7 @@ function viewShopping() {
   const row = i => `<div class="item ${i.done ? 'done' : ''}" data-lp="${i.id}"><button class="check" data-act="item" data-id="${i.id}">${I.check}</button>
     <div class="iname"><button class="name" data-act="item" data-id="${i.id}">${esc(i.name)}</button>${i.done ? '' : priceHints(i)}</div><button class="x" data-act="item-del" data-id="${i.id}" aria-label="${t('delete')}">${I.x}</button></div>`;
   return `<div class="screen">
-    <div class="topbar"><h1>${t('shopping')}</h1><button class="iconbtn" data-act="receipt" aria-label="${esc(t('scanReceipt'))}" title="${esc(t('scanReceipt'))}">${I.camera}</button></div>
+    <div class="topbar"><h1>${t('shopping')}</h1><button class="iconbtn" data-act="receipt-paste" aria-label="${esc(t('pasteReceipt'))}" title="${esc(t('pasteReceipt'))}">${I.paste}</button><button class="iconbtn" data-act="receipt" aria-label="${esc(t('scanReceipt'))}" title="${esc(t('scanReceipt'))}">${I.camera}</button></div>
     <input type="file" id="receipt-in" accept="image/*" hidden>
     <form class="add-row" data-form="shop"><input id="shop-in" autocomplete="off" autocorrect="off" enterkeyhint="done" placeholder="${esc(t('addItem'))}" value="${esc(ui.shopQ || '')}"><button type="submit" aria-label="+">${I.plus}</button></form>
     <div id="shop-sugg">${suggHtml(ui.shopQ)}</div>
@@ -716,16 +717,22 @@ async function scanReceipt(file) {
     const { data: { text } } = await worker.recognize(await prepImage(file));
     await worker.terminate();
     if (ui.sheet?.kind !== 'receipt') return;
-    const { store: st, items } = parseReceipt(text);
-    ui.sheet = { kind: 'receipt', phase: 'review', text, showText: false, store: st || (ui.shopOrder !== 'added' ? ui.shopOrder : 'biedronka'), detected: !!st,
-      rows: items.map(i => ({ raw: i.raw, name: matchProduct(i.raw) || i.name, unit: i.unit, qty: i.qty, on: true })) };
+    reviewReceipt(text);
   } catch (e) { ui.sheet = { kind: 'receipt', phase: 'error', msg: e.message }; }
   renderSheet();
+}
+function reviewReceipt(text) {
+  const { store: st, items } = parseReceipt(text);
+  ui.sheet = { kind: 'receipt', phase: 'review', text, showText: false, store: st || (ui.shopOrder !== 'added' ? ui.shopOrder : 'biedronka'), detected: !!st,
+    rows: items.map(i => ({ raw: i.raw, name: (i.clean ? S.products[itemKey(i.name)]?.name : null) || matchProduct(i.raw) || i.name, unit: i.unit, qty: i.qty, on: true })) };
 }
 function renderReceiptSheet() {
   const s = ui.sheet, root = $('#sheet-root');
   let body, foot = `<button type="button" class="btn ghost" data-sact="close">${t('cancel')}</button>`;
-  if (s.phase === 'ocr') body = `<div class="empty"><div class="em">🧾</div><b>${t('ocrReading')}</b>${t('ocrFirst')}<div class="ocr-track"><i id="ocr-bar" style="width:${Math.round(s.progress * 100)}%"></i></div></div>`;
+  if (s.phase === 'paste') {
+    body = `<div class="hint" style="margin:0 2px 10px">${t('pasteHint')}</div><textarea class="in" id="r-paste" rows="12" placeholder="Lidl\nMleko Łaciate 3,2%; 4,49\nBanany luz; 6,99"></textarea>`;
+    foot += `<button type="button" class="btn primary" data-sact="r-parse">${t('pasteRead')}</button>`;
+  } else if (s.phase === 'ocr') body = `<div class="empty"><div class="em">🧾</div><b>${t('ocrReading')}</b>${t('ocrFirst')}<div class="ocr-track"><i id="ocr-bar" style="width:${Math.round(s.progress * 100)}%"></i></div></div>`;
   else if (s.phase === 'error') body = `<div class="empty"><div class="em">⚠️</div><b>${esc(s.msg)}</b></div>`;
   else if (!s.rows.length) body = `<div class="empty"><div class="em">🤔</div><b>${t('ocrNothing')}</b>${t('ocrTips')}</div>`
     + `<pre class="ocrtext">${esc(s.text || '')}</pre>`;
@@ -741,12 +748,13 @@ function renderReceiptSheet() {
     foot += `<button type="button" class="btn primary" data-sact="r-save">${t('savePrices', { n: s.rows.filter(r => r.on).length })}</button>`;
   }
   root.innerHTML = `<div class="scrim" data-sact="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>
-    <div class="sheet-h"><h2>${t('scanReceipt')}</h2><button class="iconbtn" data-sact="close">${I.x}</button></div>
+    <div class="sheet-h"><h2>${s.phase === 'paste' ? t('pasteReceipt') : t('scanReceipt')}</h2><button class="iconbtn" data-sact="close">${I.x}</button></div>
     <div class="sheet-b">${body}</div><div class="sheet-f">${foot}</div></div>`;
 }
 function receiptAct(act, v) {
   const s = ui.sheet;
   if (act === 'r-store') { s.store = v; return renderSheet(); }
+  if (act === 'r-parse') { const v = $('#r-paste')?.value || ''; if (!v.trim()) return; reviewReceipt(v); return renderSheet(); }
   if (act === 'r-text') { s.showText = !s.showText; return renderSheet(); }
   if (act === 'r-toggle') { s.rows[+v].on = !s.rows[+v].on; return renderSheet(); }
   if (act === 'r-save') {
@@ -924,6 +932,7 @@ document.addEventListener('click', async e => {
     case 'item': { const it = S.shopping.find(x => x.id === id); if (it) store.toggleItem(it).catch(() => { }); return; }
     case 'item-del': store.deleteItem(id).catch(() => { }); return;
     case 'receipt': $('#receipt-in').click(); return;
+    case 'receipt-paste': ui.sheet = { kind: 'receipt', phase: 'paste' }; renderSheet(true); return;
     case 'shoporder': ui.shopOrder = v; localStorage.setItem('razem-shoporder', v); return render();
     case 'layoutstore': ui.layoutStore = v; return render();
     case 'aisle': {
